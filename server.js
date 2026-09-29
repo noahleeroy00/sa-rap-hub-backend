@@ -13,19 +13,21 @@ const {
 
 require("dotenv").config();
 
-const app = express();
 
 /* =========================================================
-   CONFIGURATION
+   APP CONFIGURATION
 ========================================================= */
 
-const PORT = process.env.PORT || 3000;
+const app = express();
 
-const R2_BUCKET = process.env.R2_BUCKET_NAME;
+const PORT = process.env.PORT || 3000;
 
 const API_URL =
     process.env.API_URL ||
     "https://sa-rap-hub-api.onrender.com";
+
+const R2_BUCKET =
+    process.env.R2_BUCKET_NAME;
 
 
 /* =========================================================
@@ -34,21 +36,16 @@ const API_URL =
 
 app.use(cors());
 
-/*
-   Normal API requests use JSON.
-*/
-app.use(express.json({
-    limit: "1mb"
-}));
+app.use(
+    express.json({
+        limit: "1mb"
+    })
+);
 
 
 /*
-   Media uploads are sent as raw binary data.
-
-   Maximum upload size:
-   30 MB.
-
-   The frontend will enforce the 15-second video limit.
+   Images and videos are uploaded as raw binary data.
+   Maximum file size: 30 MB.
 */
 const mediaUploadParser = express.raw({
     type: [
@@ -64,11 +61,14 @@ const mediaUploadParser = express.raw({
 ========================================================= */
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+
+    connectionString:
+        process.env.DATABASE_URL,
 
     ssl: {
         rejectUnauthorized: false
     }
+
 });
 
 
@@ -76,26 +76,23 @@ const pool = new Pool({
    CLOUDFLARE R2
 ========================================================= */
 
-if (
-    !process.env.R2_ENDPOINT ||
-    !process.env.R2_ACCESS_KEY_ID ||
-    !process.env.R2_SECRET_ACCESS_KEY ||
-    !R2_BUCKET
-) {
-    console.error(
-        "Missing Cloudflare R2 environment variables."
-    );
-}
-
 const r2 = new S3Client({
+
     region: "auto",
 
-    endpoint: process.env.R2_ENDPOINT,
+    endpoint:
+        process.env.R2_ENDPOINT,
 
     credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+
+        accessKeyId:
+            process.env.R2_ACCESS_KEY_ID,
+
+        secretAccessKey:
+            process.env.R2_SECRET_ACCESS_KEY
+
     }
+
 });
 
 
@@ -106,6 +103,7 @@ const r2 = new S3Client({
 function getFileExtension(contentType) {
 
     const extensions = {
+
         "image/jpeg": ".jpg",
         "image/png": ".png",
         "image/webp": ".webp",
@@ -115,6 +113,7 @@ function getFileExtension(contentType) {
         "video/webm": ".webm",
         "video/quicktime": ".mov",
         "video/ogg": ".ogv"
+
     };
 
     return extensions[contentType] || "";
@@ -138,6 +137,7 @@ function getMediaType(contentType) {
 function isAllowedMediaType(contentType) {
 
     const allowedTypes = [
+
         "image/jpeg",
         "image/png",
         "image/webp",
@@ -147,6 +147,7 @@ function isAllowedMediaType(contentType) {
         "video/webm",
         "video/quicktime",
         "video/ogg"
+
     ];
 
     return allowedTypes.includes(contentType);
@@ -155,29 +156,34 @@ function isAllowedMediaType(contentType) {
 
 async function profileExists(profileId) {
 
-    const result = await pool.query(
-        `
-        SELECT id
-        FROM profiles
-        WHERE id = $1
-        `,
-        [profileId]
-    );
+    const result =
+        await pool.query(
+            `
+            SELECT id
+            FROM profiles
+            WHERE id = $1
+            `,
+            [profileId]
+        );
 
     return result.rows.length > 0;
 }
 
 
 /* =========================================================
-   BASIC SERVER ROUTE
+   HOME
 ========================================================= */
 
 app.get("/", (req, res) => {
 
     res.json({
+
         name: "SA Rap Hub API",
+
         status: "online",
+
         version: "1.0.0"
+
     });
 
 });
@@ -191,29 +197,42 @@ app.get("/profiles", async (req, res) => {
 
     try {
 
-        const result = await pool.query(`
-            SELECT
-                id,
-                username,
-                display_name,
-                bio,
-                avatar_url,
-                account_type,
-                created_at
+        const result =
+            await pool.query(
+                `
+                SELECT
 
-            FROM profiles
+                    id,
+                    username,
+                    display_name,
+                    bio,
+                    avatar_url,
+                    account_type,
+                    created_at
 
-            ORDER BY created_at DESC
-        `);
+                FROM profiles
+
+                ORDER BY created_at DESC
+                `
+            );
+
 
         res.json(result.rows);
 
+
     } catch (error) {
 
-        console.error("GET /profiles error:", error);
+        console.error(
+            "GET /profiles:",
+            error
+        );
+
 
         res.status(500).json({
-            message: "Failed to load profiles"
+
+            message:
+                "Failed to load profiles"
+
         });
 
     }
@@ -230,72 +249,98 @@ app.post("/profiles", async (req, res) => {
     try {
 
         const {
+
             username,
             display_name,
             bio,
             account_type
+
         } = req.body;
 
 
         if (!username || !display_name) {
 
             return res.status(400).json({
+
                 message:
                     "Username and display name are required"
+
             });
 
         }
 
 
-        const result = await pool.query(
-            `
-            INSERT INTO profiles
-            (
-                id,
-                username,
-                display_name,
-                bio,
-                account_type
-            )
+        const result =
+            await pool.query(
+                `
+                INSERT INTO profiles
 
-            VALUES
-            (
-                gen_random_uuid(),
-                $1,
-                $2,
-                $3,
-                $4
-            )
+                (
+                    id,
+                    username,
+                    display_name,
+                    bio,
+                    account_type
+                )
 
-            RETURNING *
-            `,
-            [
-                username,
-                display_name,
-                bio || null,
-                account_type || "fan"
-            ]
-        );
+                VALUES
+
+                (
+                    gen_random_uuid(),
+                    $1,
+                    $2,
+                    $3,
+                    $4
+                )
+
+                RETURNING *
+                `,
+                [
+
+                    username
+                        .trim(),
+
+                    display_name
+                        .trim(),
+
+                    bio || null,
+
+                    account_type || "fan"
+
+                ]
+            );
 
 
         res.status(201).json(
             result.rows[0]
         );
 
+
     } catch (error) {
 
-        console.error("POST /profiles error:", error);
+        console.error(
+            "POST /profiles:",
+            error
+        );
+
 
         if (error.code === "23505") {
 
             return res.status(409).json({
-                message: "Username already exists"
+
+                message:
+                    "Username already exists"
+
             });
 
         }
 
+
         res.status(500).json({
-            message: "Failed to create profile"
+
+            message:
+                "Failed to create profile"
+
         });
 
     }
@@ -309,15 +354,19 @@ app.post("/profiles", async (req, res) => {
 
 app.post("/auth/signup", async (req, res) => {
 
-    const client = await pool.connect();
+    const client =
+        await pool.connect();
+
 
     try {
 
         const {
+
             email,
             password,
             display_name,
             account_type
+
         } = req.body;
 
 
@@ -328,8 +377,10 @@ app.post("/auth/signup", async (req, res) => {
         ) {
 
             return res.status(400).json({
+
                 message:
                     "Email, password and display name are required"
+
             });
 
         }
@@ -338,15 +389,19 @@ app.post("/auth/signup", async (req, res) => {
         if (password.length < 6) {
 
             return res.status(400).json({
+
                 message:
                     "Password must be at least 6 characters"
+
             });
 
         }
 
 
         const cleanEmail =
-            email.trim().toLowerCase();
+            email
+                .trim()
+                .toLowerCase();
 
 
         const existingAccount =
@@ -360,35 +415,51 @@ app.post("/auth/signup", async (req, res) => {
             );
 
 
-        if (existingAccount.rows.length > 0) {
+        if (
+            existingAccount.rows.length > 0
+        ) {
 
             return res.status(409).json({
+
                 message:
                     "An account with this email already exists"
+
             });
 
         }
 
 
         const passwordHash =
-            await bcrypt.hash(password, 12);
+            await bcrypt.hash(
+                password,
+                12
+            );
 
 
         let username =
             display_name
                 .trim()
                 .toLowerCase()
-                .replace(/[^a-z0-9]+/g, "_")
-                .replace(/^_+|_+$/g, "")
+                .replace(
+                    /[^a-z0-9]+/g,
+                    "_"
+                )
+                .replace(
+                    /^_+|_+$/g,
+                    ""
+                )
                 .slice(0, 50);
 
 
         if (!username) {
+
             username = "user";
+
         }
 
 
-        let finalUsername = username;
+        let finalUsername =
+            username;
 
         let usernameNumber = 1;
 
@@ -409,7 +480,9 @@ app.post("/auth/signup", async (req, res) => {
             if (
                 usernameCheck.rows.length === 0
             ) {
+
                 break;
+
             }
 
 
@@ -428,6 +501,7 @@ app.post("/auth/signup", async (req, res) => {
             await client.query(
                 `
                 INSERT INTO profiles
+
                 (
                     id,
                     username,
@@ -436,6 +510,7 @@ app.post("/auth/signup", async (req, res) => {
                 )
 
                 VALUES
+
                 (
                     gen_random_uuid(),
                     $1,
@@ -446,9 +521,13 @@ app.post("/auth/signup", async (req, res) => {
                 RETURNING *
                 `,
                 [
+
                     finalUsername,
+
                     display_name.trim(),
+
                     account_type || "fan"
+
                 ]
             );
 
@@ -461,6 +540,7 @@ app.post("/auth/signup", async (req, res) => {
             await client.query(
                 `
                 INSERT INTO accounts
+
                 (
                     id,
                     profile_id,
@@ -469,6 +549,7 @@ app.post("/auth/signup", async (req, res) => {
                 )
 
                 VALUES
+
                 (
                     gen_random_uuid(),
                     $1,
@@ -477,15 +558,20 @@ app.post("/auth/signup", async (req, res) => {
                 )
 
                 RETURNING
+
                     id,
                     profile_id,
                     email,
                     created_at
                 `,
                 [
+
                     profile.id,
+
                     cleanEmail,
+
                     passwordHash
+
                 ]
             );
 
@@ -510,8 +596,9 @@ app.post("/auth/signup", async (req, res) => {
 
         await client.query("ROLLBACK");
 
+
         console.error(
-            "POST /auth/signup error:",
+            "POST /auth/signup:",
             error
         );
 
@@ -519,16 +606,20 @@ app.post("/auth/signup", async (req, res) => {
         if (error.code === "23505") {
 
             return res.status(409).json({
+
                 message:
                     "Email or username already exists"
+
             });
 
         }
 
 
         res.status(500).json({
+
             message:
                 "Failed to create account"
+
         });
 
 
@@ -550,54 +641,67 @@ app.post("/auth/login", async (req, res) => {
     try {
 
         const {
+
             email,
             password
+
         } = req.body;
 
 
         if (!email || !password) {
 
             return res.status(400).json({
+
                 message:
                     "Email and password are required"
+
             });
 
         }
 
 
-        const result = await pool.query(
-            `
-            SELECT
-
-                a.id AS account_id,
-                a.email,
-                a.password_hash,
-
-                p.id AS profile_id,
-                p.username,
-                p.display_name,
-                p.bio,
-                p.avatar_url,
-                p.account_type
-
-            FROM accounts a
-
-            JOIN profiles p
-                ON p.id = a.profile_id
-
-            WHERE a.email = $1
-            `,
-            [
-                email.trim().toLowerCase()
-            ]
-        );
+        const cleanEmail =
+            email
+                .trim()
+                .toLowerCase();
 
 
-        if (result.rows.length === 0) {
+        const result =
+            await pool.query(
+                `
+                SELECT
+
+                    a.id AS account_id,
+                    a.email,
+                    a.password_hash,
+
+                    p.id AS profile_id,
+                    p.username,
+                    p.display_name,
+                    p.bio,
+                    p.avatar_url,
+                    p.account_type
+
+                FROM accounts a
+
+                JOIN profiles p
+                    ON p.id = a.profile_id
+
+                WHERE a.email = $1
+                `,
+                [cleanEmail]
+            );
+
+
+        if (
+            result.rows.length === 0
+        ) {
 
             return res.status(401).json({
+
                 message:
                     "Invalid email or password"
+
             });
 
         }
@@ -617,8 +721,10 @@ app.post("/auth/login", async (req, res) => {
         if (!passwordMatches) {
 
             return res.status(401).json({
+
                 message:
                     "Invalid email or password"
+
             });
 
         }
@@ -663,14 +769,16 @@ app.post("/auth/login", async (req, res) => {
     } catch (error) {
 
         console.error(
-            "POST /auth/login error:",
+            "POST /auth/login:",
             error
         );
 
 
         res.status(500).json({
+
             message:
                 "Login failed"
+
         });
 
     }
@@ -680,7 +788,6 @@ app.post("/auth/login", async (req, res) => {
 
 /* =========================================================
    MEDIA UPLOAD
-   CLOUDFARE R2
 ========================================================= */
 
 app.post(
@@ -698,42 +805,53 @@ app.post(
 
 
             /* -----------------------------------------
-               USER CHECK
+               CHECK USER
             ----------------------------------------- */
 
             if (!userId) {
 
                 return res.status(401).json({
+
                     message:
                         "User authentication is required"
+
                 });
 
             }
 
 
             const userExists =
-                await profileExists(userId);
+                await profileExists(
+                    userId
+                );
 
 
             if (!userExists) {
 
                 return res.status(401).json({
+
                     message:
                         "User account was not found"
+
                 });
 
             }
 
 
             /* -----------------------------------------
-               FILE CHECK
+               CHECK FILE
             ----------------------------------------- */
 
-            if (!req.body || !Buffer.isBuffer(req.body)) {
+            if (
+                !req.body ||
+                !Buffer.isBuffer(req.body)
+            ) {
 
                 return res.status(400).json({
+
                     message:
                         "No media file was received"
+
                 });
 
             }
@@ -742,8 +860,10 @@ app.post(
             if (req.body.length === 0) {
 
                 return res.status(400).json({
+
                     message:
                         "Uploaded file is empty"
+
                 });
 
             }
@@ -752,43 +872,60 @@ app.post(
             if (!contentType) {
 
                 return res.status(400).json({
+
                     message:
                         "Content-Type is required"
+
                 });
 
             }
 
 
-            if (!isAllowedMediaType(contentType)) {
+            if (
+                !isAllowedMediaType(
+                    contentType
+                )
+            ) {
 
                 return res.status(415).json({
+
                     message:
                         "This image or video format is not supported"
+
                 });
 
             }
 
 
             const mediaType =
-                getMediaType(contentType);
+                getMediaType(
+                    contentType
+                );
 
 
             const extension =
-                getFileExtension(contentType);
+                getFileExtension(
+                    contentType
+                );
 
 
-            if (!mediaType || !extension) {
+            if (
+                !mediaType ||
+                !extension
+            ) {
 
                 return res.status(415).json({
+
                     message:
                         "Unsupported media format"
+
                 });
 
             }
 
 
             /* -----------------------------------------
-               GENERATE PERMANENT R2 KEY
+               CREATE R2 KEY
             ----------------------------------------- */
 
             const key =
@@ -796,10 +933,11 @@ app.post(
 
 
             /* -----------------------------------------
-               UPLOAD TO R2
+               UPLOAD TO CLOUDFLARE R2
             ----------------------------------------- */
 
             await r2.send(
+
                 new PutObjectCommand({
 
                     Bucket:
@@ -818,15 +956,16 @@ app.post(
                         "public, max-age=31536000, immutable"
 
                 })
+
             );
 
 
             /* -----------------------------------------
-               MEDIA URL
+               PERMANENT MEDIA URL
             ----------------------------------------- */
 
             const mediaUrl =
-                `${API_URL}/media/${encodeURIComponent(key)}`;
+                `${API_URL}/media/${key}`;
 
 
             res.status(201).json({
@@ -854,14 +993,16 @@ app.post(
         } catch (error) {
 
             console.error(
-                "POST /media/upload error:",
+                "POST /media/upload:",
                 error
             );
 
 
             res.status(500).json({
+
                 message:
                     "Failed to upload media"
+
             });
 
         }
@@ -872,39 +1013,70 @@ app.post(
 
 /* =========================================================
    SERVE MEDIA FROM PRIVATE R2
-   WITH VIDEO RANGE SUPPORT
 ========================================================= */
 
+/*
+   IMPORTANT:
+
+   Express 5 wildcard parameters are arrays.
+
+   Example:
+
+   /media/users/123/media/photo.jpg
+
+   becomes:
+
+   req.params.key = [
+       "users",
+       "123",
+       "media",
+       "photo.jpg"
+   ]
+
+   We join the pieces back together before
+   asking Cloudflare R2 for the object.
+*/
+
 app.get(
-    "/media/:key(*)",
+    "/media/*key",
     async (req, res) => {
 
         try {
 
-            const key =
+            const keyParts =
                 req.params.key;
+
+
+            const key =
+                Array.isArray(keyParts)
+                    ? keyParts.join("/")
+                    : keyParts;
 
 
             if (!key) {
 
                 return res.status(400).json({
+
                     message:
                         "Media key is required"
+
                 });
 
             }
 
 
             /* -----------------------------------------
-               GET OBJECT INFORMATION
+               GET FILE INFORMATION
             ----------------------------------------- */
 
             let metadata;
+
 
             try {
 
                 metadata =
                     await r2.send(
+
                         new HeadObjectCommand({
 
                             Bucket:
@@ -914,7 +1086,9 @@ app.get(
                                 key
 
                         })
+
                     );
+
 
             } catch (error) {
 
@@ -924,11 +1098,14 @@ app.get(
                 ) {
 
                     return res.status(404).json({
+
                         message:
                             "Media not found"
+
                     });
 
                 }
+
 
                 throw error;
 
@@ -936,7 +1113,9 @@ app.get(
 
 
             const fileSize =
-                Number(metadata.ContentLength || 0);
+                Number(
+                    metadata.ContentLength || 0
+                );
 
 
             const contentType =
@@ -945,7 +1124,7 @@ app.get(
 
 
             /* -----------------------------------------
-               CACHE HEADERS
+               RESPONSE HEADERS
             ----------------------------------------- */
 
             res.setHeader(
@@ -953,10 +1132,12 @@ app.get(
                 contentType
             );
 
+
             res.setHeader(
                 "Accept-Ranges",
                 "bytes"
             );
+
 
             res.setHeader(
                 "Cache-Control",
@@ -965,8 +1146,7 @@ app.get(
 
 
             /* -----------------------------------------
-               RANGE REQUEST
-               Important for video playback/seeking.
+               VIDEO RANGE REQUEST
             ----------------------------------------- */
 
             const range =
@@ -1010,11 +1190,13 @@ app.get(
                     const suffixLength =
                         Number(match[2]);
 
+
                     start =
                         Math.max(
                             fileSize - suffixLength,
                             0
                         );
+
 
                     end =
                         fileSize - 1;
@@ -1059,6 +1241,7 @@ app.get(
 
                 const object =
                     await r2.send(
+
                         new GetObjectCommand({
 
                             Bucket:
@@ -1071,6 +1254,7 @@ app.get(
                                 `bytes=${start}-${end}`
 
                         })
+
                     );
 
 
@@ -1082,7 +1266,7 @@ app.get(
 
 
             /* -----------------------------------------
-               NORMAL FULL FILE REQUEST
+               NORMAL FILE REQUEST
             ----------------------------------------- */
 
             res.setHeader(
@@ -1093,6 +1277,7 @@ app.get(
 
             const object =
                 await r2.send(
+
                     new GetObjectCommand({
 
                         Bucket:
@@ -1102,6 +1287,7 @@ app.get(
                             key
 
                     })
+
                 );
 
 
@@ -1111,7 +1297,7 @@ app.get(
         } catch (error) {
 
             console.error(
-                "GET /media error:",
+                "GET /media:",
                 error
             );
 
@@ -1119,8 +1305,10 @@ app.get(
             if (!res.headersSent) {
 
                 res.status(500).json({
+
                     message:
                         "Failed to load media"
+
                 });
 
             }
@@ -1132,51 +1320,59 @@ app.get(
 
 
 /* =========================================================
-   POSTS
+   GET POSTS
 ========================================================= */
 
 app.get("/posts", async (req, res) => {
 
     try {
 
-        const result = await pool.query(`
-            SELECT
+        const result =
+            await pool.query(
+                `
+                SELECT
 
-                posts.id,
-                posts.content,
-                posts.media_url,
-                posts.media_type,
-                posts.created_at,
+                    posts.id,
+                    posts.content,
+                    posts.media_url,
+                    posts.media_type,
+                    posts.created_at,
 
-                profiles.id AS user_id,
-                profiles.username,
-                profiles.display_name,
-                profiles.avatar_url,
-                profiles.account_type
+                    profiles.id AS user_id,
+                    profiles.username,
+                    profiles.display_name,
+                    profiles.avatar_url,
+                    profiles.account_type
 
-            FROM posts
+                FROM posts
 
-            JOIN profiles
-                ON profiles.id = posts.user_id
+                JOIN profiles
+                    ON profiles.id = posts.user_id
 
-            ORDER BY
-                posts.created_at DESC
-        `);
+                ORDER BY
+                    posts.created_at DESC
+                `
+            );
 
 
-        res.json(result.rows);
+        res.json(
+            result.rows
+        );
+
 
     } catch (error) {
 
         console.error(
-            "GET /posts error:",
+            "GET /posts:",
             error
         );
 
 
         res.status(500).json({
+
             message:
                 "Failed to load posts"
+
         });
 
     }
@@ -1193,42 +1389,55 @@ app.post("/posts", async (req, res) => {
     try {
 
         const {
+
             user_id,
             content,
             media_url,
             media_type
+
         } = req.body;
 
 
         if (!user_id) {
 
             return res.status(400).json({
+
                 message:
                     "user_id is required"
+
             });
 
         }
 
 
         const userExists =
-            await profileExists(user_id);
+            await profileExists(
+                user_id
+            );
 
 
         if (!userExists) {
 
             return res.status(401).json({
+
                 message:
                     "User account was not found"
+
             });
 
         }
 
 
-        if (!content && !media_url) {
+        if (
+            !content &&
+            !media_url
+        ) {
 
             return res.status(400).json({
+
                 message:
                     "Post must contain text or media"
+
             });
 
         }
@@ -1236,12 +1445,15 @@ app.post("/posts", async (req, res) => {
 
         if (
             media_type &&
-            !["image", "video"].includes(media_type)
+            !["image", "video"]
+                .includes(media_type)
         ) {
 
             return res.status(400).json({
+
                 message:
                     "media_type must be image or video"
+
             });
 
         }
@@ -1251,6 +1463,7 @@ app.post("/posts", async (req, res) => {
             await pool.query(
                 `
                 INSERT INTO posts
+
                 (
                     id,
                     user_id,
@@ -1260,6 +1473,7 @@ app.post("/posts", async (req, res) => {
                 )
 
                 VALUES
+
                 (
                     gen_random_uuid(),
                     $1,
@@ -1271,10 +1485,17 @@ app.post("/posts", async (req, res) => {
                 RETURNING *
                 `,
                 [
+
                     user_id,
-                    content?.trim() || null,
+
+                    content
+                        ? content.trim()
+                        : null,
+
                     media_url || null,
+
                     media_type || null
+
                 ]
             );
 
@@ -1287,14 +1508,16 @@ app.post("/posts", async (req, res) => {
     } catch (error) {
 
         console.error(
-            "POST /posts error:",
+            "POST /posts:",
             error
         );
 
 
         res.status(500).json({
+
             message:
                 "Failed to create post"
+
         });
 
     }
@@ -1303,36 +1526,45 @@ app.post("/posts", async (req, res) => {
 
 
 /* =========================================================
-   GLOBAL ERROR HANDLER
+   ERROR HANDLER
 ========================================================= */
 
 app.use(
     (error, req, res, next) => {
 
         console.error(
-            "Unhandled server error:",
+            "Unhandled error:",
             error
         );
 
 
-        if (error.type === "entity.too.large") {
+        if (
+            error.type ===
+            "entity.too.large"
+        ) {
 
             return res.status(413).json({
+
                 message:
                     "File is too large. Maximum size is 30 MB."
+
             });
 
         }
 
 
         if (res.headersSent) {
+
             return next(error);
+
         }
 
 
         res.status(500).json({
+
             message:
                 "An unexpected server error occurred"
+
         });
 
     }
@@ -1343,10 +1575,13 @@ app.use(
    START SERVER
 ========================================================= */
 
-app.listen(PORT, () => {
+app.listen(
+    PORT,
+    () => {
 
-    console.log(
-        `SA Rap Hub API running on port ${PORT}`
-    );
+        console.log(
+            `SA Rap Hub API running on port ${PORT}`
+        );
 
-});
+    }
+);
