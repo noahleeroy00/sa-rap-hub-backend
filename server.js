@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
+const { S3Client } = require("@aws-sdk/client-s3");
 require("dotenv").config();
 
 const app = express();
@@ -13,6 +14,20 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false
+    }
+});
+
+
+/* =========================
+   CLOUDFLARE R2
+========================= */
+
+const r2 = new S3Client({
+    region: "auto",
+    endpoint: process.env.R2_ENDPOINT,
+    credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
     }
 });
 
@@ -223,6 +238,7 @@ app.post("/auth/signup", async (req, res) => {
             finalUsername = `${username}_${usernameNumber}`;
 
             usernameNumber++;
+
         }
 
         const client = await pool.connect();
