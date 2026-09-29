@@ -1016,8 +1016,6 @@ app.post(
 ========================================================= */
 
 /*
-   IMPORTANT:
-
    Express 5 wildcard parameters are arrays.
 
    Example:
@@ -1327,6 +1325,10 @@ app.get("/posts", async (req, res) => {
 
     try {
 
+        const userId =
+            req.headers["x-user-id"] || null;
+
+
         const result =
             await pool.query(
                 `
@@ -1342,16 +1344,46 @@ app.get("/posts", async (req, res) => {
                     profiles.username,
                     profiles.display_name,
                     profiles.avatar_url,
-                    profiles.account_type
+                    profiles.account_type,
+
+                    COUNT(likes.id)::int AS likes,
+
+                    CASE
+                        WHEN $1 IS NULL THEN false
+                        ELSE EXISTS (
+                            SELECT 1
+                            FROM likes current_user_like
+                            WHERE current_user_like.post_id = posts.id
+                            AND current_user_like.user_id::text = $1
+                        )
+                    END AS liked
 
                 FROM posts
 
                 JOIN profiles
                     ON profiles.id = posts.user_id
 
+                LEFT JOIN likes
+                    ON likes.post_id = posts.id
+
+                GROUP BY
+
+                    posts.id,
+                    posts.content,
+                    posts.media_url,
+                    posts.media_type,
+                    posts.created_at,
+
+                    profiles.id,
+                    profiles.username,
+                    profiles.display_name,
+                    profiles.avatar_url,
+                    profiles.account_type
+
                 ORDER BY
                     posts.created_at DESC
-                `
+                `,
+                [userId]
             );
 
 
@@ -1523,6 +1555,410 @@ app.post("/posts", async (req, res) => {
     }
 
 });
+
+
+/* =========================================================
+   LIKE POST
+========================================================= */
+
+app.post(
+    "/posts/:postId/like",
+    async (req, res) => {
+
+        try {
+
+            const postId =
+                req.params.postId;
+
+            const userId =
+                req.headers["x-user-id"];
+
+
+            /* -----------------------------------------
+               CHECK USER
+            ----------------------------------------- */
+
+            if (!userId) {
+
+                return res.status(401).json({
+
+                    message:
+                        "User authentication is required"
+
+                });
+
+            }
+
+
+            const userExists =
+                await profileExists(
+                    userId
+                );
+
+
+            if (!userExists) {
+
+                return res.status(401).json({
+
+                    message:
+                        "User account was not found"
+
+                });
+
+            }
+
+
+            /* -----------------------------------------
+               CHECK POST
+            ----------------------------------------- */
+
+            const postCheck =
+                await pool.query(
+                    `
+                    SELECT id
+                    FROM posts
+                    WHERE id = $1
+                    `,
+                    [postId]
+                );
+
+
+            if (
+                postCheck.rows.length === 0
+            ) {
+
+                return res.status(404).json({
+
+                    message:
+                        "Post not found"
+
+                });
+
+            }
+
+
+            /* -----------------------------------------
+               CREATE LIKE
+            ----------------------------------------- */
+
+            await pool.query(
+                `
+                INSERT INTO likes
+
+                (
+                    id,
+                    post_id,
+                    user_id
+                )
+
+                VALUES
+
+                (
+                    gen_random_uuid(),
+                    $1,
+                    $2
+                )
+
+                ON CONFLICT
+                    (post_id, user_id)
+                DO NOTHING
+                `,
+                [
+                    postId,
+                    userId
+                ]
+            );
+
+
+            /* -----------------------------------------
+               GET CURRENT COUNT
+            ----------------------------------------- */
+
+            const countResult =
+                await pool.query(
+                    `
+                    SELECT
+                        COUNT(*)::int AS likes
+                    FROM likes
+                    WHERE post_id = $1
+                    `,
+                    [postId]
+                );
+
+
+            res.json({
+
+                liked: true,
+
+                likes:
+                    countResult.rows[0].likes
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "POST /posts/:postId/like:",
+                error
+            );
+
+
+            res.status(500).json({
+
+                message:
+                    "Could not like post"
+
+            });
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   UNLIKE POST
+========================================================= */
+
+app.delete(
+    "/posts/:postId/like",
+    async (req, res) => {
+
+        try {
+
+            const postId =
+                req.params.postId;
+
+            const userId =
+                req.headers["x-user-id"];
+
+
+            /* -----------------------------------------
+               CHECK USER
+            ----------------------------------------- */
+
+            if (!userId) {
+
+                return res.status(401).json({
+
+                    message:
+                        "User authentication is required"
+
+                });
+
+            }
+
+
+            const userExists =
+                await profileExists(
+                    userId
+                );
+
+
+            if (!userExists) {
+
+                return res.status(401).json({
+
+                    message:
+                        "User account was not found"
+
+                });
+
+            }
+
+
+            /* -----------------------------------------
+               REMOVE LIKE
+            ----------------------------------------- */
+
+            await pool.query(
+                `
+                DELETE FROM likes
+
+                WHERE post_id = $1
+
+                AND user_id = $2
+                `,
+                [
+                    postId,
+                    userId
+                ]
+            );
+
+
+            /* -----------------------------------------
+               GET CURRENT COUNT
+            ----------------------------------------- */
+
+            const countResult =
+                await pool.query(
+                    `
+                    SELECT
+                        COUNT(*)::int AS likes
+                    FROM likes
+                    WHERE post_id = $1
+                    `,
+                    [postId]
+                );
+
+
+            res.json({
+
+                liked: false,
+
+                likes:
+                    countResult.rows[0].likes
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "DELETE /posts/:postId/like:",
+                error
+            );
+
+
+            res.status(500).json({
+
+                message:
+                    "Could not unlike post"
+
+            });
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   GET POST LIKES
+========================================================= */
+
+app.get(
+    "/posts/:postId/likes",
+    async (req, res) => {
+
+        try {
+
+            const postId =
+                req.params.postId;
+
+            const userId =
+                req.headers["x-user-id"] || null;
+
+
+            /* -----------------------------------------
+               CHECK POST
+            ----------------------------------------- */
+
+            const postCheck =
+                await pool.query(
+                    `
+                    SELECT id
+                    FROM posts
+                    WHERE id = $1
+                    `,
+                    [postId]
+                );
+
+
+            if (
+                postCheck.rows.length === 0
+            ) {
+
+                return res.status(404).json({
+
+                    message:
+                        "Post not found"
+
+                });
+
+            }
+
+
+            /* -----------------------------------------
+               GET LIKE COUNT
+            ----------------------------------------- */
+
+            const countResult =
+                await pool.query(
+                    `
+                    SELECT
+                        COUNT(*)::int AS likes
+                    FROM likes
+                    WHERE post_id = $1
+                    `,
+                    [postId]
+                );
+
+
+            let liked = false;
+
+
+            /* -----------------------------------------
+               CHECK CURRENT USER LIKE
+            ----------------------------------------- */
+
+            if (userId) {
+
+                const likedResult =
+                    await pool.query(
+                        `
+                        SELECT id
+                        FROM likes
+
+                        WHERE post_id = $1
+
+                        AND user_id = $2
+
+                        LIMIT 1
+                        `,
+                        [
+                            postId,
+                            userId
+                        ]
+                    );
+
+
+                liked =
+                    likedResult.rows.length > 0;
+
+            }
+
+
+            res.json({
+
+                likes:
+                    countResult.rows[0].likes,
+
+                liked
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "GET /posts/:postId/likes:",
+                error
+            );
+
+
+            res.status(500).json({
+
+                message:
+                    "Could not load post likes"
+
+            });
+
+        }
+
+    }
+);
 
 
 /* =========================================================
