@@ -1346,39 +1346,28 @@ app.get("/posts", async (req, res) => {
                     profiles.avatar_url,
                     profiles.account_type,
 
-                    COUNT(likes.id)::int AS likes,
+                    (
+                        SELECT COUNT(*)::int
+                        FROM likes
+                        WHERE likes.post_id = posts.id
+                    ) AS likes,
 
-                    CASE
-                        WHEN $1 IS NULL THEN false
-                        ELSE EXISTS (
-                            SELECT 1
-                            FROM likes current_user_like
-                            WHERE current_user_like.post_id = posts.id
-                            AND current_user_like.user_id::text = $1
-                        )
-                    END AS liked
+                    (
+                        CASE
+                            WHEN $1 IS NULL THEN false
+                            ELSE EXISTS (
+                                SELECT 1
+                                FROM likes
+                                WHERE likes.post_id = posts.id
+                                AND likes.user_id::text = $1
+                            )
+                        END
+                    ) AS liked
 
                 FROM posts
 
                 JOIN profiles
                     ON profiles.id = posts.user_id
-
-                LEFT JOIN likes
-                    ON likes.post_id = posts.id
-
-                GROUP BY
-
-                    posts.id,
-                    posts.content,
-                    posts.media_url,
-                    posts.media_type,
-                    posts.created_at,
-
-                    profiles.id,
-                    profiles.username,
-                    profiles.display_name,
-                    profiles.avatar_url,
-                    profiles.account_type
 
                 ORDER BY
                     posts.created_at DESC
@@ -1403,18 +1392,16 @@ app.get("/posts", async (req, res) => {
         res.status(500).json({
 
             message:
-                "Failed to load posts"
+                "Failed to load posts",
+
+            error:
+                error.message
 
         });
 
     }
 
 });
-
-
-/* =========================================================
-   CREATE POST
-========================================================= */
 
 app.post("/posts", async (req, res) => {
 
