@@ -1354,7 +1354,7 @@ app.get("/posts", async (req, res) => {
 
                     (
                         CASE
-                            WHEN $1 IS NULL THEN false
+    WHEN $1::text IS NULL THEN false
                             ELSE EXISTS (
                                 SELECT 1
                                 FROM likes
